@@ -1,0 +1,98 @@
+import streamlit as st
+import pandas as pd
+import yfinance as yf
+
+# ── Page setup ──
+st.set_page_config(page_title="Smith'n The Market", layout="wide")
+st.title("Smith'n The Market – Fast Scanner")
+
+# ── Inputs ──
+tickers = st.text_input(
+    "Tickers (comma-separated)",
+    "SPY, QQQ, TSLA, BTC-USD, ETH-USD"
+)
+interval = st.selectbox(
+    "Interval",
+    ["1m", "3m", "5m", "15m"],
+    index=1
+)
+# Choose a period that gives enough bars
+period = "1d" if interval == "1m" else "5d"
+
+symbols = [
+    t.strip().upper()
+    for t in tickers.split(",")
+    if t.strip()
+]
+
+# ── Fetch & compute ──
+@st.cache_data(ttl=60)
+def fetch(sym):
+    try:
+        df = yf.download(
+            sym,
+            period=period,
+            interval=interval,
+            progress=False,
+            threads=False
+        )
+    except Exception:
+        return None
+
+    if df is None or df.empty:
+        return None
+
+    # RSI(14)
+    delta    = df["Close"].diff()
+    gain     = delta.clip(lower=0)
+    loss     = (-delta).clip(lower=0)
+    avg_gain = gain.rolling(14, min_periods=1).mean()
+    avg_loss = loss.rolling(14, min_periods=1).mean()
+    rs       = avg_gain.div(avg_loss).replace([pd.NA, float("inf")], 0)
+    df["RSI"]  = 100 - 100/(1 + rs)
+
+    # EMA9 & EMA21
+    df["EMA9"]  = df["Close"].ewm(span=9,  adjust=False).mean()
+    df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
+
+    return df.dropna()
+
+# ── Build signals ──
+records = []
+for s in symbols:
+    df = fetch(s)
+    if df is None:
+        continue
+
+    last = df.iloc[-1]
+    price = float(last["Close"])
+    rsi   = float(last["RSI"])
+    ema9  = float(last["EMA9"])
+    ema21 = float(last["EMA21"])
+
+    sig = "HOLD"
+    if rsi < 30 and ema9 > ema21:
+        sig = "BUY"
+    elif rsi > 70 and ema9 < ema21:
+        sig = "SELL"
+
+    records.append({
+        "Ticker": s,
+        "Price":  round(price, 2),
+        "RSI":    round(rsi,   2),
+        "EMA9":   round(ema9,  2),
+        "EMA21":  round(ema21, 2),
+        "Signal": sig
+    })
+
+# ── Display ──
+if records:
+    df_signals = pd.DataFrame(records)
+    st.dataframe(df_signals)
+
+    choice = st.selectbox("Chart ticker", df_signals["Ticker"].tolist())
+    if choice:
+        chart_df = fetch(choice)
+        st.line_chart(chart_df[["Close","EMA9","EMA21"]])
+else:
+    st.error("⚠️ No data fetched. Check tickers, market hours, or interval.")
