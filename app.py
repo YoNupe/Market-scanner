@@ -119,6 +119,10 @@ for r in records:
                   f"Signal changed from {prev} to {r['Signal']}")
     st.session_state.last_signals[r["Ticker"]] = r["Signal"]
 
+st.markdown("---")
+if st.button("🔔 Send me a test alert"):
+    send_push("STM Test", "This is a test notification from Smith’n The Market.")
+    st.success("Test notification sent! Check your phone.")
 # — Display table & chart —
 if records:
     df_sig = pd.DataFrame(records)
