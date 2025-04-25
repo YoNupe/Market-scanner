@@ -16,14 +16,9 @@ interval = st.selectbox(
     ["1m", "3m", "5m", "15m"],
     index=1
 )
-# Choose a period that gives enough bars
 period = "1d" if interval == "1m" else "5d"
 
-symbols = [
-    t.strip().upper()
-    for t in tickers.split(",")
-    if t.strip()
-]
+symbols = [t.strip().upper() for t in tickers.split(",") if t.strip()]
 
 # ── Fetch & compute ──
 @st.cache_data(ttl=60)
@@ -57,7 +52,7 @@ def fetch(sym):
 
     return df.dropna()
 
-# ── Build signals ──
+# ── Build signal table ──
 records = []
 for s in symbols:
     df = fetch(s)
@@ -87,12 +82,16 @@ for s in symbols:
 
 # ── Display ──
 if records:
-    df_signals = pd.DataFrame(records)
-    st.dataframe(df_signals)
+    df_sig = pd.DataFrame(records)
+    st.dataframe(df_sig)
 
-    choice = st.selectbox("Chart ticker", df_signals["Ticker"].tolist())
+    choice = st.selectbox("Chart ticker", df_sig["Ticker"].tolist())
     if choice:
         chart_df = fetch(choice)
-        st.line_chart(chart_df[["Close","EMA9","EMA21"]])
+        if chart_df is not None:
+            st.subheader(f"{choice} – Price & EMA Chart")
+            # Only plot the columns we know exist
+            to_plot = [c for c in ["Close", "EMA9", "EMA21"] if c in chart_df.columns]
+            st.line_chart(chart_df[to_plot])
 else:
     st.error("⚠️ No data fetched. Check tickers, market hours, or interval.")
