@@ -21,7 +21,7 @@ symbols  = [t.strip().upper() for t in tickers.split(",") if t.strip()]
 def fetch(sym):
     df = pd.DataFrame()
 
-    # Crypto via Binance
+    # 1) Crypto via Binance
     if sym.endswith("-USD"):
         pair = sym.replace("-USD","USDT")
         url = f"https://api.binance.com/api/v3/klines?symbol={pair}&interval={interval}&limit=500"
@@ -35,15 +35,15 @@ def fetch(sym):
         except:
             df = pd.DataFrame()
     else:
-        # Stocks via yfinance
+        # 2) Stocks/ETFs via yfinance
         period = "1d" if interval=="1m" else "5d"
         try:
             df = yf.download(sym, period=period, interval=interval, progress=False, threads=False)
         except:
             df = pd.DataFrame()
 
-    # Fallback to 90d daily if intraday empty
-    if df.empty:
+    # 3) Fallback to daily (if intraday empty)
+    if df is None or df.empty:
         try:
             df = yf.download(sym, period="90d", interval="1d", progress=False, threads=False)
         except:
@@ -52,7 +52,7 @@ def fetch(sym):
     if df is None or df.empty:
         return None
 
-    # RSI(14)
+    # ── Compute RSI(14) ──
     delta    = df["Close"].diff()
     gain     = delta.clip(lower=0)
     loss     = (-delta).clip(lower=0)
@@ -61,13 +61,13 @@ def fetch(sym):
     rs       = avg_gain.div(avg_loss).replace([pd.NA, float("inf")], 0)
     df["RSI"]  = 100 - 100/(1+rs)
 
-    # EMA9 & EMA21
+    # ── Compute EMA9 & EMA21 ──
     df["EMA9"]  = df["Close"].ewm(span=9,  adjust=False).mean()
     df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
 
     return df.dropna()
 
-# ── Build signals ──
+# ── Build signal table ──
 records = []
 for s in symbols:
     df = fetch(s)
@@ -100,15 +100,19 @@ if records:
     df_sig = pd.DataFrame(records)
     st.dataframe(df_sig)
 
-    choice = st.selectbox("Chart ticker", df_sig["Ticker"].tolist())
+    choice   = st.selectbox("Chart ticker", df_sig["Ticker"].tolist())
     chart_df = fetch(choice)
 
+    # ← Updated chart guard
     if chart_df is None or chart_df.empty:
-        st.warning(f"No chart data available for {choice}.")
+        st.warning(f"No chart data available for {choice}. Try a different interval or wait for market hours.")
     else:
         st.subheader(f"{choice} – Price & EMA Chart")
-        # only plot available columns
-        cols = ["Close"] + [c for c in chart_df.columns if c.startswith("EMA")]
-        st.line_chart(chart_df[cols])
+        wanted       = ["Close", "EMA9", "EMA21"]
+        cols_to_plot = [c for c in wanted if c in chart_df.columns]
+        if cols_to_plot:
+            st.line_chart(chart_df[cols_to_plot])
+        else:
+            st.error("Unexpected: No Close/EMA columns found in data.")
 else:
     st.error("⚠️ No data fetched. Check tickers, market hours, or interval.")
