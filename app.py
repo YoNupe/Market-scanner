@@ -4,33 +4,23 @@ import yfinance as yf
 import requests
 import logging
 
-# ── Silence extra logs ──
+# — Silence extra logs —
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
-# ── Page setup ──
+# — Page setup —
 st.set_page_config(page_title="Smith'n The Market", layout="wide")
 st.title("Smith'n The Market – Fast Scanner")
 
-# ── Inputs ──
-ticker_input = st.text_input(
-    "Tickers (comma-separated)",
-    "SPY, QQQ, TSLA, BTC-USD, ETH-USD"
-)
+# — Inputs —
+tickers  = st.text_input("Tickers (comma-separated)", "SPY, QQQ, TSLA, BTC-USD, ETH-USD")
 interval = st.selectbox("Interval", ["1m","3m","5m","15m"], index=1)
-symbols = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
+symbols  = [t.strip().upper() for t in tickers.split(",") if t.strip()]
 
-# ── Fetch & indicator computation ──
+# — Fetch + Indicators —
 @st.cache_data(ttl=60)
 def fetch(sym):
-    # choose intraday period
-    if interval == "1m":
-        period = "1d"
-    else:
-        period = "5d"
-
     df = pd.DataFrame()
-
-    # crypto via Binance
+    # 1) Crypto via Binance
     if sym.endswith("-USD"):
         pair = sym.replace("-USD", "USDT")
         url = f"https://api.binance.com/api/v3/klines?symbol={pair}&interval={interval}&limit=500"
@@ -44,14 +34,15 @@ def fetch(sym):
         except:
             df = pd.DataFrame()
     else:
-        # stocks via yfinance
+        # 2) Stocks/ETFs via yfinance
+        period = "1d" if interval=="1m" else "5d"
         try:
             df = yf.download(sym, period=period, interval=interval,
                              progress=False, threads=False)
         except:
             df = pd.DataFrame()
 
-    # fallback to daily if empty
+    # 3) Fallback to daily if intraday empty
     if df.empty:
         try:
             df = yf.download(sym, period="90d", interval="1d",
@@ -62,7 +53,7 @@ def fetch(sym):
     if df is None or df.empty:
         return None
 
-    # compute RSI(14)
+    # — Compute RSI(14) —
     delta    = df["Close"].diff()
     gain     = delta.clip(lower=0)
     loss     = (-delta).clip(lower=0)
@@ -71,13 +62,13 @@ def fetch(sym):
     rs       = avg_gain.div(avg_loss).replace([pd.NA,float("inf")],0)
     df["RSI"] = 100 - 100/(1+rs)
 
-    # compute EMAs
+    # — Compute EMA9 & EMA21 —
     df["EMA9"]  = df["Close"].ewm(span=9,  adjust=False).mean()
     df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
 
     return df.dropna()
 
-# ── Build signals ──
+# — Build signals table —
 records = []
 for s in symbols:
     df = fetch(s)
@@ -105,25 +96,32 @@ for s in symbols:
         "Signal":  sig
     })
 
-# ── Display table & chart ──
+# — Display table & chart —
 if records:
-    df_signals = pd.DataFrame(records)
-    st.dataframe(df_signals)
+    df_sig = pd.DataFrame(records)
+    st.dataframe(df_sig)
 
-    choice = st.selectbox("Chart ticker", df_signals["Ticker"].tolist())
+    choice   = st.selectbox("Chart ticker", df_sig["Ticker"].tolist())
     chart_df = fetch(choice)
 
     if chart_df is None or chart_df.empty:
         st.warning(f"No chart data for {choice}. Try a different interval or wait for market hours.")
     else:
         st.subheader(f"{choice} – Price & EMA Chart")
-        # debug: show actual cols
-        # st.write("Columns:", chart_df.columns.tolist())
+        # decide exactly which columns exist
+        wanted = ["Close", "EMA9", "EMA21"]
+        cols_to_plot = [c for c in wanted if c in chart_df.columns]
 
-        to_plot = ["Close"] + [c for c in ["EMA9","EMA21"] if c in chart_df.columns]
-        if not to_plot:
-            st.error("No Close/EMA columns found.")
+        if not cols_to_plot:
+            st.error("No Close/EMA columns found to plot.")
+            st.write("Available columns:", chart_df.columns.tolist())
         else:
-            st.line_chart(chart_df[to_plot])
+            try:
+                st.line_chart(chart_df.loc[:, cols_to_plot])
+            except Exception as err:
+                st.error(f"Charting error: {err}")
+                st.write("Tried to plot:", cols_to_plot)
+                st.write("Available:", chart_df.columns.tolist())
+
 else:
     st.error("⚠️ No data fetched. Check tickers, market hours, or interval.")
