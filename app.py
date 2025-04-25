@@ -17,10 +17,9 @@ interval = st.selectbox(
     index=1
 )
 period = "1d" if interval == "1m" else "5d"
-
 symbols = [t.strip().upper() for t in tickers.split(",") if t.strip()]
 
-# ── Fetch & compute ──
+# ── Fetch & compute indicators ──
 @st.cache_data(ttl=60)
 def fetch(sym):
     try:
@@ -87,12 +86,11 @@ if records:
 
     choice = st.selectbox("Chart ticker", df_sig["Ticker"].tolist())
     if choice:
-            chart_df = fetch(choice)
-    st.subheader(f"{choice} – Price & EMA Chart")
-    # pick whatever EMA columns are present
-    cols_to_plot = ["Close"] + [c for c in chart_df.columns if c.startswith("EMA")]
-    # safety check
-    if cols_to_plot:
-        st.line_chart(chart_df[cols_to_plot])
-    else:
-        st.warning("No EMA columns to chart for this symbol.")
+        chart_df = fetch(choice)
+        if chart_df is not None:
+            st.subheader(f"{choice} – Price & EMA Chart")
+            # dynamically select columns that exist
+            cols_to_plot = ["Close"] + [c for c in chart_df.columns if c.startswith("EMA")]
+            st.line_chart(chart_df[cols_to_plot])
+else:
+    st.error("⚠️ No data fetched. Check tickers, market hours, or interval.")
