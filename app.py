@@ -122,6 +122,7 @@ for r in records:
 st.markdown("---")
 if st.button("🔔 Send me a test alert"):
     send_push("STM Test", "This is a test notification from Smith’n The Market.")
+    st.write("🚀 Push sent for", r["Ticker"], "→", r["Signal"])
     st.success("Test notification sent! Check your phone.")
 # — Display table & chart —
 if records:
