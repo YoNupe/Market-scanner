@@ -96,6 +96,28 @@ for s in symbols:
         "EMA21":   round(e21,2),
         "Signal":  sig
     })
+    
+    # ── PUSHOVER ALERTS ──
+import requests
+
+USER_KEY  = st.secrets["pushover_user"]
+APP_TOKEN = st.secrets["pushover_token"]
+
+def send_push(title, message):
+    requests.post(
+        "https://api.pushover.net/1/messages.json",
+        data={"token": APP_TOKEN, "user": USER_KEY, "title": title, "message": message}
+    )
+
+if "last_signals" not in st.session_state:
+    st.session_state.last_signals = {r["Ticker"]: r["Signal"] for r in records}
+
+for r in records:
+    prev = st.session_state.last_signals.get(r["Ticker"])
+    if prev and prev != r["Signal"]:
+        send_push(f"{r['Ticker']} → {r['Signal']}",
+                  f"Signal changed from {prev} to {r['Signal']}")
+    st.session_state.last_signals[r["Ticker"]] = r["Signal"]
 
 # — Display table & chart —
 if records:
