@@ -20,13 +20,14 @@ symbols  = [t.strip().upper() for t in tickers.split(",") if t.strip()]
 @st.cache_data(ttl=60)
 def fetch(sym):
     df = pd.DataFrame()
+
     # 1) Crypto via Binance
     if sym.endswith("-USD"):
-        pair = sym.replace("-USD", "USDT")
-        url = f"https://api.binance.com/api/v3/klines?symbol={pair}&interval={interval}&limit=500"
+        pair = sym.replace("-USD","USDT")
+        url  = f"https://api.binance.com/api/v3/klines?symbol={pair}&interval={interval}&limit=500"
         try:
             data = requests.get(url, timeout=5).json()
-            df = pd.DataFrame(data, columns=range(12))[[0,1,2,3,4,5]]
+            df   = pd.DataFrame(data, columns=range(12))[[0,1,2,3,4,5]]
             df.columns = ["open_time","Open","High","Low","Close","Volume"]
             df[["Open","High","Low","Close","Volume"]] = df[["Open","High","Low","Close","Volume"]].astype(float)
             df.index = pd.to_datetime(df["open_time"], unit="ms")
@@ -107,21 +108,20 @@ if records:
     if chart_df is None or chart_df.empty:
         st.warning(f"No chart data for {choice}. Try a different interval or wait for market hours.")
     else:
+        # ── FLATTEN MultiIndex columns if present ──
+        if hasattr(chart_df.columns, "nlevels") and chart_df.columns.nlevels > 1:
+            chart_df.columns = chart_df.columns.get_level_values(0)
+
         st.subheader(f"{choice} – Price & EMA Chart")
-        # decide exactly which columns exist
-        wanted = ["Close", "EMA9", "EMA21"]
+
+        wanted       = ["Close", "EMA9", "EMA21"]
         cols_to_plot = [c for c in wanted if c in chart_df.columns]
 
         if not cols_to_plot:
             st.error("No Close/EMA columns found to plot.")
-            st.write("Available columns:", chart_df.columns.tolist())
+            st.write("Available columns:", list(chart_df.columns))
         else:
-            try:
-                st.line_chart(chart_df.loc[:, cols_to_plot])
-            except Exception as err:
-                st.error(f"Charting error: {err}")
-                st.write("Tried to plot:", cols_to_plot)
-                st.write("Available:", chart_df.columns.tolist())
+            st.line_chart(chart_df[cols_to_plot])
 
 else:
     st.error("⚠️ No data fetched. Check tickers, market hours, or interval.")
