@@ -16,12 +16,18 @@ interval = st.selectbox(
     ["1m", "3m", "5m", "15m"],
     index=1
 )
-period = "1d" if interval == "1m" else "5d"
 symbols = [t.strip().upper() for t in tickers.split(",") if t.strip()]
 
-# ── Fetch & compute indicators ──
+# ── Fetch helper with fallback to daily ──
 @st.cache_data(ttl=60)
 def fetch(sym):
+    # decide periods
+    if interval == "1m":
+        period = "1d"
+    else:
+        period = "5d"
+
+    # 1) Try your chosen intraday
     try:
         df = yf.download(
             sym,
@@ -31,12 +37,25 @@ def fetch(sym):
             threads=False
         )
     except Exception:
-        return None
+        df = pd.DataFrame()
+
+    # 2) If empty, fall back to daily (last 90 days)
+    if df.empty:
+        try:
+            df = yf.download(
+                sym,
+                period="90d",
+                interval="1d",
+                progress=False,
+                threads=False
+            )
+        except Exception:
+            return None
 
     if df is None or df.empty:
         return None
 
-    # RSI(14)
+    # ── Compute RSI(14) ──
     delta    = df["Close"].diff()
     gain     = delta.clip(lower=0)
     loss     = (-delta).clip(lower=0)
@@ -45,20 +64,20 @@ def fetch(sym):
     rs       = avg_gain.div(avg_loss).replace([pd.NA, float("inf")], 0)
     df["RSI"]  = 100 - 100/(1 + rs)
 
-    # EMA9 & EMA21
+    # ── Compute EMA9 & EMA21 ──
     df["EMA9"]  = df["Close"].ewm(span=9,  adjust=False).mean()
     df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
 
     return df.dropna()
 
-# ── Build signal table ──
+# ── Build your signal table ──
 records = []
 for s in symbols:
     df = fetch(s)
     if df is None:
         continue
 
-    last = df.iloc[-1]
+    last  = df.iloc[-1]
     price = float(last["Close"])
     rsi   = float(last["RSI"])
     ema9  = float(last["EMA9"])
@@ -72,11 +91,11 @@ for s in symbols:
 
     records.append({
         "Ticker": s,
-        "Price":  round(price, 2),
-        "RSI":    round(rsi,   2),
-        "EMA9":   round(ema9,  2),
-        "EMA21":  round(ema21, 2),
-        "Signal": sig
+        "Price":   round(price,  2),
+        "RSI":     round(rsi,    2),
+        "EMA9":    round(ema9,   2),
+        "EMA21":   round(ema21,  2),
+        "Signal":  sig
     })
 
 # ── Display ──
@@ -89,7 +108,7 @@ if records:
         chart_df = fetch(choice)
         if chart_df is not None:
             st.subheader(f"{choice} – Price & EMA Chart")
-            # dynamically select columns that exist
+            # dynamically pick only existing columns
             cols_to_plot = ["Close"] + [c for c in chart_df.columns if c.startswith("EMA")]
             st.line_chart(chart_df[cols_to_plot])
 else:
