@@ -87,11 +87,12 @@ if records:
 
     choice = st.selectbox("Chart ticker", df_sig["Ticker"].tolist())
     if choice:
-        chart_df = fetch(choice)
-        if chart_df is not None:
-            st.subheader(f"{choice} – Price & EMA Chart")
-            # Only plot the columns we know exist
-            to_plot = [c for c in ["Close", "EMA9", "EMA21"] if c in chart_df.columns]
-            st.line_chart(chart_df[to_plot])
-else:
-    st.error("⚠️ No data fetched. Check tickers, market hours, or interval.")
+            chart_df = fetch(choice)
+    st.subheader(f"{choice} – Price & EMA Chart")
+    # pick whatever EMA columns are present
+    cols_to_plot = ["Close"] + [c for c in chart_df.columns if c.startswith("EMA")]
+    # safety check
+    if cols_to_plot:
+        st.line_chart(chart_df[cols_to_plot])
+    else:
+        st.warning("No EMA columns to chart for this symbol.")
